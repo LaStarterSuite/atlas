@@ -35,6 +35,7 @@ def get_dns_provider(
 
 
 def _load_implementations() -> None:
+	import atlas.atlas.core.dns_providers.cloudflare
 	import atlas.atlas.core.dns_providers.route53
 
 
