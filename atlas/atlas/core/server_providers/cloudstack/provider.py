@@ -194,7 +194,7 @@ class CloudStackProvider(ServerProvider):
 		self.client = CloudStackClient(
 			self.settings.cloudstack_api_endpoint,
 			self.settings.cloudstack_api_key,
-			self.settings.get_password("cloudstack_secret_key"),
+			self.settings.get_password("cloudstack_secret_key", raise_exception=False) or "",
 		)
 
 	@override
