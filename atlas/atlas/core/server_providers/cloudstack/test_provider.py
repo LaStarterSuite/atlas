@@ -49,7 +49,8 @@ class TestCloudStackClient(UnitTestCase):
 		self.assertEqual(result, {"zone": [{"id": "zone-id"}]})
 		self.assertEqual(client.session.get.call_args.args, ("https://cloudstack.example.com/client/api",))
 		self.assertEqual(
-			client.session.get.call_args.kwargs["params"], client.signed_query("listZones", None)
+			client.session.get.call_args.kwargs["params"],
+			client.signed_query("listZones", {"response": "json"}),
 		)
 
 	def test_request_treats_431_as_an_allowed_missing_resource(self) -> None:
@@ -145,6 +146,31 @@ class TestCloudStackProvider(UnitTestCase):
 		self.assertEqual(provider.settings.is_server_provider_setup_completed, 1)
 		provider.settings.save.assert_called_once_with()
 
+	def test_setup_infrastructure_reuses_a_registered_key_pair(self) -> None:
+		provider = self.provider()
+		provider.client.paginate.side_effect = [
+			[{"id": "zone-id", "name": "zone-1"}],
+			[{"name": "wardhive-matrix", "fingerprint": provider.public_key_fingerprint}],
+		]
+
+		provider.setup_infrastructure()
+
+		provider.client.request.assert_not_called()
+		self.assertEqual(provider.settings.is_server_provider_setup_completed, 1)
+		provider.settings.save.assert_called_once_with()
+
+	def test_ssh_key_pair_name_reuses_the_registered_pair(self) -> None:
+		provider = self.provider()
+		provider.client.paginate.return_value = [{"name": "wardhive-matrix", "fingerprint": "aa:bb:cc:dd"}]
+
+		self.assertEqual(provider.ssh_key_pair_name, "atlas-par-1-ssh-key")
+
+		provider.client.paginate.return_value = [
+			{"name": "wardhive-matrix", "fingerprint": provider.public_key_fingerprint}
+		]
+
+		self.assertEqual(provider.ssh_key_pair_name, "wardhive-matrix")
+
 	def test_validate_settings_refuses_a_bare_hostname(self) -> None:
 		provider = self.provider()
 		provider.settings.cloudstack_api_endpoint = "cloudstack.example.com"
@@ -182,6 +208,17 @@ class TestCloudStackProvider(UnitTestCase):
 		self.assertIsNone(sizes[0].hourly_pricing_usd_cents)
 		self.assertEqual(sizes[0].provider_metadata["id"], "offering-1")
 		provider.client.paginate.assert_called_once_with("listServiceOfferings", "serviceoffering")
+
+	def test_fetch_server_sizes_skips_custom_offerings(self) -> None:
+		provider = self.provider()
+		provider.client.paginate.return_value = [
+			{"id": "custom", "name": "Unconstrained compute offering", "rootdisksize": 0},
+			{"id": "offering-1", "name": "m1.small", "cpunumber": 1, "memory": 1024, "rootdisksize": 0},
+		]
+
+		sizes = provider.fetch_server_sizes()
+
+		self.assertEqual([size.name for size in sizes], ["m1.small"])
 
 	def test_fetch_server_images_keeps_supported_templates(self) -> None:
 		provider = self.provider()
@@ -415,7 +452,7 @@ class TestCloudStackProvider(UnitTestCase):
 			cloudstack_api_key="api-key",
 			cloudstack_zone="zone-1",
 			region_name="par-1",
-			public_ssh_key="ssh-ed25519 key",
+			public_ssh_key="ssh-ed25519 AAAA",
 			is_server_provider_setup_completed=None,
 		)
 		settings.get_password = lambda field, **_: "secret-key"

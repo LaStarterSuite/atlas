@@ -5,7 +5,7 @@ import hmac
 import logging
 import re
 from collections.abc import Mapping
-from hashlib import sha1
+from hashlib import md5, sha1
 from itertools import count
 from typing import TYPE_CHECKING, Any, ClassVar, override
 from urllib.parse import quote, urlsplit
@@ -225,9 +225,9 @@ class CloudStackProvider(ServerProvider):
 
 	@override
 	def fetch_server_sizes(self) -> tuple[ServerSizeData, ...]:
-		"""Return the compute offerings the CloudStack account can use."""
+		"""Return the fixed-size compute offerings the CloudStack account can use."""
 		offerings = self.client.paginate("listServiceOfferings", "serviceoffering")
-		return tuple(self.server_size(offering) for offering in offerings)
+		return tuple(size for offering in offerings if (size := self.server_size(offering)) is not None)
 
 	@override
 	def fetch_server_images(self) -> tuple[ServerImageData, ...]:
@@ -308,17 +308,44 @@ class CloudStackProvider(ServerProvider):
 		return ids[0]
 
 	def ensure_ssh_key_pair(self) -> None:
-		"""Register the Atlas public key as the Atlas CloudStack key pair when absent."""
-		name = self.ssh_key_pair_name
-		key_pairs = self.client.paginate("listSSHKeyPairs", "sshkeypair", {"name": name})
-		if any(key_pair.get("name") == name for key_pair in key_pairs):
+		"""Register the Atlas public key as a CloudStack key pair when absent.
+
+		CloudStack rejects a second registration of one public key, so a pair that
+		another operator registered earlier stays in place under its own name.
+		"""
+		if self.registered_key_pair_name():
 			return
-		self.client.request("registerSSHKeyPair", {"name": name, "publickey": self.settings.public_ssh_key})
+		self.client.request(
+			"registerSSHKeyPair",
+			{"name": self.fallback_key_pair_name, "publickey": self.settings.public_ssh_key},
+		)
+
+	def registered_key_pair_name(self) -> str | None:
+		"""Return the name of the account key pair that carries the Atlas public key."""
+		fingerprint = self.public_key_fingerprint
+		for key_pair in self.client.paginate("listSSHKeyPairs", "sshkeypair"):
+			if key_pair.get("fingerprint") == fingerprint and isinstance(key_pair.get("name"), str):
+				return key_pair["name"]
+		return None
 
 	@property
 	def ssh_key_pair_name(self) -> str:
-		"""Return the stable CloudStack key pair name."""
+		"""Return the CloudStack key pair name that carries the Atlas public key."""
+		return self.registered_key_pair_name() or self.fallback_key_pair_name
+
+	@property
+	def fallback_key_pair_name(self) -> str:
+		"""Return the CloudStack key pair name Atlas registers when the key is absent."""
 		return f"atlas-{self.settings.region_name}-ssh-key"
+
+	@property
+	def public_key_fingerprint(self) -> str:
+		"""Return the MD5 fingerprint CloudStack reports for the Atlas public key."""
+		fields = self.settings.public_ssh_key.split()
+		if len(fields) < 2:
+			raise CloudStackError("Atlas Settings has no usable public SSH key")
+		digest = md5(base64.b64decode(fields[1])).hexdigest()
+		return ":".join(digest[index : index + 2] for index in range(0, len(digest), 2))
 
 	def wait_for_job(self, job_id: str, description: str) -> Mapping:
 		"""Wait for one CloudStack async job and return its result."""
@@ -425,16 +452,18 @@ class CloudStackProvider(ServerProvider):
 			raise CloudStackError(f"Atlas server {server.name} has no default route device")
 		return fields[fields.index("dev") + 1]
 
-	def server_size(self, offering: Mapping) -> ServerSizeData:
+	def server_size(self, offering: Mapping) -> ServerSizeData | None:
 		"""Convert one CloudStack compute offering into Atlas catalog data.
 
-		CloudStack reports no per-offering architecture, and Atlas host templates are x86_64.
+		Return None for a custom offering: it leaves the CPU count and the memory to
+		the user at deployment time, so it describes no fixed catalog size. CloudStack
+		reports no per-offering architecture, and Atlas host templates are x86_64.
 		"""
 		name = offering.get("name")
 		cpu_count = offering.get("cpunumber")
 		memory_mib = offering.get("memory")
 		if not isinstance(name, str) or not isinstance(cpu_count, int) or not isinstance(memory_mib, int):
-			raise CloudStackError("CloudStack compute offering has invalid CPU or memory data")
+			return None
 
 		disk_gib = offering.get("rootdisksize")
 		return ServerSizeData(
