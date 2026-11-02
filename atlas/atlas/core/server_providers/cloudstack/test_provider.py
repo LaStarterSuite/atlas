@@ -140,7 +140,7 @@ class TestCloudStackProvider(UnitTestCase):
 		provider.setup_infrastructure()
 
 		provider.client.request.assert_called_once_with(
-			"registerSSHKeyPair", {"name": "atlas-ssh-key", "publickey": "ssh-ed25519 key"}
+			"registerSSHKeyPair", {"name": "atlas-par-1-ssh-key", "publickey": "ssh-ed25519 key"}
 		)
 		self.assertEqual(provider.settings.is_server_provider_setup_completed, 1)
 		provider.settings.save.assert_called_once_with()
@@ -205,7 +205,12 @@ class TestCloudStackProvider(UnitTestCase):
 		provider = self.provider()
 		provider.zone_id = Mock(return_value="zone-id")
 		provider.find_server = Mock(return_value=None)
-		provider.client.request.side_effect = [{"id": "vm-1", "jobid": "job-1"}]
+		provider.client.paginate.return_value = []
+		provider.client.request.side_effect = [
+			{"id": "vm-1", "jobid": "job-1"},
+			{"jobid": "job-2"},
+			{"jobid": "job-3"},
+		]
 		provider.client.job_result.side_effect = [
 			None,
 			{
@@ -215,6 +220,8 @@ class TestCloudStackProvider(UnitTestCase):
 					"nic": [{"ipaddress": "203.0.113.9"}],
 				}
 			},
+			{"volume": {"id": "vol-1", "name": f"{SERVER_NAME}-pool"}},
+			None,
 		]
 
 		with patch("atlas.atlas.core.server_providers.base.sleep"):
@@ -230,7 +237,7 @@ class TestCloudStackProvider(UnitTestCase):
 					"zoneid": "zone-id",
 					"name": SERVER_NAME,
 					"displayname": SERVER_NAME,
-					"keypair": "atlas-ssh-key",
+					"keypair": "atlas-par-1-ssh-key",
 				},
 			),
 		)
@@ -240,11 +247,56 @@ class TestCloudStackProvider(UnitTestCase):
 	def test_ensure_server_reuses_the_server_with_the_atlas_name(self) -> None:
 		provider = self.provider()
 		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Stopped", "nic": []})
+		provider.client.paginate.return_value = [{"id": "vol-1", "virtualmachineid": "vm-1"}]
 
 		server = provider.ensure_server(self.request())
 
 		self.assertEqual((server.provider_server_id, server.status), ("vm-1", "Stopped"))
 		provider.client.request.assert_not_called()
+
+	def test_ensure_server_creates_and_attaches_the_pool_volume(self) -> None:
+		provider = self.provider()
+		provider.zone_id = Mock(return_value="zone-id")
+		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Running", "nic": []})
+		provider.client.paginate.return_value = []
+		provider.client.request.side_effect = [{"jobid": "job-1"}, {"jobid": "job-2"}]
+		provider.client.job_result.side_effect = [
+			{"volume": {"id": "vol-1", "name": f"{SERVER_NAME}-pool"}},
+			None,
+		]
+
+		provider.ensure_server(self.request())
+
+		self.assertEqual(
+			provider.client.request.call_args_list[0].args,
+			("createVolume", {"name": f"{SERVER_NAME}-pool", "size": 100, "zoneid": "zone-id"}),
+		)
+		self.assertEqual(
+			provider.client.request.call_args_list[1].args,
+			("attachVolume", {"id": "vol-1", "virtualmachineid": "vm-1"}),
+		)
+
+	def test_ensure_server_attaches_a_detached_pool_volume(self) -> None:
+		provider = self.provider()
+		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Stopped", "nic": []})
+		provider.client.paginate.return_value = [{"id": "vol-1", "virtualmachineid": None}]
+		provider.client.request.side_effect = [{"jobid": "job-1"}]
+		provider.client.job_result.side_effect = [None]
+
+		provider.ensure_server(self.request())
+
+		self.assertEqual(
+			provider.client.request.call_args_list[0].args,
+			("attachVolume", {"id": "vol-1", "virtualmachineid": "vm-1"}),
+		)
+
+	def test_ensure_server_refuses_a_pool_volume_of_another_server(self) -> None:
+		provider = self.provider()
+		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Stopped", "nic": []})
+		provider.client.paginate.return_value = [{"id": "vol-1", "virtualmachineid": "vm-9"}]
+
+		with self.assertRaises(CloudStackError):
+			provider.ensure_server(self.request())
 
 	def test_find_server_refuses_an_ambiguous_name(self) -> None:
 		provider = self.provider()
@@ -362,7 +414,7 @@ class TestCloudStackProvider(UnitTestCase):
 			cloudstack_api_endpoint="https://cloudstack.example.com",
 			cloudstack_api_key="api-key",
 			cloudstack_zone="zone-1",
-			resource_name_prefix="atlas-",
+			region_name="par-1",
 			public_ssh_key="ssh-ed25519 key",
 			is_server_provider_setup_completed=None,
 		)

@@ -317,7 +317,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Server Provider",
-   "options": "Generic\nScaleway\nAWS",
+   "options": "Generic\nScaleway\nAWS\nCloudStack",
    "read_only_depends_on": "eval: doc.is_server_provider_setup_completed",
    "reqd": 1
   },
@@ -335,7 +335,7 @@
    "fieldname": "dns_provider",
    "fieldtype": "Select",
    "label": "DNS Provider",
-   "options": "Route53",
+   "options": "Route53\nCloudflare",
    "read_only_depends_on": "eval: doc.is_dns_setup_completed",
    "reqd": 1
   },
@@ -374,6 +374,54 @@
   },
   {
    "fieldname": "route53_dns_zone_id",
+   "fieldtype": "Data",
+   "label": "Zone ID",
+   "read_only_depends_on": "eval: doc.is_dns_setup_completed"
+  },
+  {
+   "depends_on": "eval: doc.server_provider == \"CloudStack\"",
+   "fieldname": "cloudstack_settings_section",
+   "fieldtype": "Section Break",
+   "label": "CloudStack Settings"
+  },
+  {
+   "fieldname": "cloudstack_api_endpoint",
+   "fieldtype": "Data",
+   "label": "API Endpoint",
+   "mandatory_depends_on": "eval: doc.server_provider == \"CloudStack\""
+  },
+  {
+   "fieldname": "cloudstack_api_key",
+   "fieldtype": "Data",
+   "label": "API Key",
+   "mandatory_depends_on": "eval: doc.server_provider == \"CloudStack\""
+  },
+  {
+   "fieldname": "cloudstack_secret_key",
+   "fieldtype": "Password",
+   "label": "Secret Key",
+   "mandatory_depends_on": "eval: doc.server_provider == \"CloudStack\""
+  },
+  {
+   "fieldname": "cloudstack_zone",
+   "fieldtype": "Data",
+   "label": "Zone",
+   "mandatory_depends_on": "eval: doc.server_provider == \"CloudStack\""
+  },
+  {
+   "depends_on": "eval: doc.dns_provider == \"Cloudflare\"",
+   "fieldname": "cloudflare_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Cloudflare Settings"
+  },
+  {
+   "fieldname": "cloudflare_api_token",
+   "fieldtype": "Password",
+   "label": "API Token",
+   "mandatory_depends_on": "eval: doc.dns_provider == \"Cloudflare\""
+  },
+  {
+   "fieldname": "cloudflare_zone_id",
    "fieldtype": "Data",
    "label": "Zone ID",
    "read_only_depends_on": "eval: doc.is_dns_setup_completed"

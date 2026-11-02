@@ -163,6 +163,9 @@ class CloudStackClient:
 		return ""
 
 
+DEFAULT_POOL_VOLUME_SIZE_GIB = 100
+
+
 @register
 class CloudStackProvider(ServerProvider):
 	"""Provide Atlas server operations through the Apache CloudStack API.
@@ -237,6 +240,7 @@ class CloudStackProvider(ServerProvider):
 		remote_server = self.find_server(request.name)
 		if remote_server is None:
 			remote_server = self.deploy_server(request)
+		self.ensure_pool_volume(request, remote_server)
 		return self.to_provider_server(remote_server)
 
 	@override
@@ -313,7 +317,7 @@ class CloudStackProvider(ServerProvider):
 	@property
 	def ssh_key_pair_name(self) -> str:
 		"""Return the stable CloudStack key pair name."""
-		return f"{self.settings.resource_name_prefix}ssh-key"
+		return f"atlas-{self.settings.region_name}-ssh-key"
 
 	def wait_for_job(self, job_id: str, description: str) -> Mapping:
 		"""Wait for one CloudStack async job and return its result."""
@@ -366,6 +370,49 @@ class CloudStackProvider(ServerProvider):
 		if not isinstance(remote_server, Mapping):
 			raise CloudStackError(f"CloudStack job {job_id} has no deployed server")
 		return remote_server
+
+	def ensure_pool_volume(self, request: ServerCreateRequest, remote_server: Mapping) -> None:
+		"""Attach the data volume that carries the virtual machine storage pool.
+
+		The volume size follows the compute offering root disk, with a
+		100 GiB fallback for offerings that leave the disk to the template.
+		"""
+		server_id = remote_server.get("id")
+		if not isinstance(server_id, str):
+			raise CloudStackError(f"CloudStack server {request.name} has no ID")
+
+		name = f"{request.name}-pool"
+		for volume in self.client.paginate("listVolumes", "volume", {"name": name}):
+			if volume.get("virtualmachineid") == server_id:
+				return
+			if volume.get("virtualmachineid"):
+				raise CloudStackError(f"CloudStack pool volume {name} is attached to another server")
+			self.attach_volume(volume, server_id, name)
+			return
+
+		size_gib = request.size_provider_metadata.get("rootdisksize")
+		if not isinstance(size_gib, int) or size_gib <= 0:
+			size_gib = DEFAULT_POOL_VOLUME_SIZE_GIB
+		created = self.client.request(
+			"createVolume", {"name": name, "size": size_gib, "zoneid": self.zone_id()}
+		)
+		job_id = created.get("jobid")
+		if not isinstance(job_id, str):
+			raise CloudStackError(f"CloudStack did not return a creation job for pool volume {name}")
+		result = self.wait_for_job(job_id, f"the creation of pool volume {name}")
+		volume = result.get("volume")
+		if not isinstance(volume, Mapping):
+			raise CloudStackError(f"CloudStack job {job_id} has no created pool volume {name}")
+		self.attach_volume(volume, server_id, name)
+
+	def attach_volume(self, volume: Mapping, server_id: str, name: str) -> None:
+		"""Attach one detached CloudStack volume and wait for the job."""
+		attached = self.client.request(
+			"attachVolume", {"id": volume.get("id"), "virtualmachineid": server_id}
+		)
+		job_id = attached.get("jobid")
+		if isinstance(job_id, str):
+			self.wait_for_job(job_id, f"the attach of pool volume {name}")
 
 	def uplink_device(self, server: "MetalServer") -> str:
 		"""Return the guest device name that carries the CloudStack default route."""
