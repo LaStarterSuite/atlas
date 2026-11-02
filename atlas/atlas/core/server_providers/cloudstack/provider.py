@@ -61,7 +61,8 @@ class CloudStackClient:
 		try:
 			response = self.session.get(
 				f"{self.endpoint}/client/api",
-				params=self.signed_query(command, params),
+				request_params = {**(params or {}), "response": "json"}
+		params=self.signed_query(command, request_params),
 				timeout=30,
 			)
 		except requests.RequestException as error:
