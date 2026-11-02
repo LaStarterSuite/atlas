@@ -58,11 +58,11 @@ class CloudStackClient:
 			"Provider request started",
 			extra={"provider": "CloudStack", "operation": command, "resource": "/client/api"},
 		)
+		request_params = {**(params or {}), "response": "json"}
 		try:
 			response = self.session.get(
 				f"{self.endpoint}/client/api",
-				request_params = {**(params or {}), "response": "json"}
-		params=self.signed_query(command, request_params),
+				params=self.signed_query(command, request_params),
 				timeout=30,
 			)
 		except requests.RequestException as error:
