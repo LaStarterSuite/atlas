@@ -141,7 +141,7 @@ class TestCloudStackProvider(UnitTestCase):
 		provider.setup_infrastructure()
 
 		provider.client.request.assert_called_once_with(
-			"registerSSHKeyPair", {"name": "atlas-par-1-ssh-key", "publickey": "ssh-ed25519 key"}
+			"registerSSHKeyPair", {"name": "atlas-par-1-ssh-key", "publickey": "ssh-ed25519 AAAA"}
 		)
 		self.assertEqual(provider.settings.is_server_provider_setup_completed, 1)
 		provider.settings.save.assert_called_once_with()
@@ -258,7 +258,7 @@ class TestCloudStackProvider(UnitTestCase):
 				}
 			},
 			{"volume": {"id": "vol-1", "name": f"{SERVER_NAME}-pool"}},
-			None,
+			{"volume": {"id": "vol-1", "name": f"{SERVER_NAME}-pool"}},
 		]
 
 		with patch("atlas.atlas.core.server_providers.base.sleep"):
@@ -299,7 +299,7 @@ class TestCloudStackProvider(UnitTestCase):
 		provider.client.request.side_effect = [{"jobid": "job-1"}, {"jobid": "job-2"}]
 		provider.client.job_result.side_effect = [
 			{"volume": {"id": "vol-1", "name": f"{SERVER_NAME}-pool"}},
-			None,
+			{"success": True},
 		]
 
 		provider.ensure_server(self.request())
@@ -318,7 +318,7 @@ class TestCloudStackProvider(UnitTestCase):
 		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Stopped", "nic": []})
 		provider.client.paginate.return_value = [{"id": "vol-1", "virtualmachineid": None}]
 		provider.client.request.side_effect = [{"jobid": "job-1"}]
-		provider.client.job_result.side_effect = [None]
+		provider.client.job_result.side_effect = [{"success": True}]
 
 		provider.ensure_server(self.request())
 
