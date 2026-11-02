@@ -84,7 +84,9 @@ class CloudflareProvider(DnsProvider):
 	def __init__(self, settings: "AtlasSettings | None" = None) -> None:
 		super().__init__(settings)
 		self.domain_name = self.settings.wildcard_domain.removeprefix("*.")
-		self.client = CloudflareClient(self.settings.get_password("cloudflare_api_token") or "")
+		self.client = CloudflareClient(
+			self.settings.get_password("cloudflare_api_token", raise_exception=False) or ""
+		)
 
 	@override
 	def validate_settings(self) -> None:
