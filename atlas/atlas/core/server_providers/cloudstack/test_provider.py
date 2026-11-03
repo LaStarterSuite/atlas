@@ -272,8 +272,8 @@ class TestCloudStackProvider(UnitTestCase):
 					"serviceofferingid": "offering-1",
 					"templateid": "template-1",
 					"zoneid": "zone-id",
-					"name": SERVER_NAME,
-					"displayname": SERVER_NAME,
+					"name": f"atlas-{SERVER_NAME}",
+					"displayname": f"atlas-{SERVER_NAME}",
 					"keypair": "atlas-par-1-ssh-key",
 				},
 			),
@@ -306,7 +306,7 @@ class TestCloudStackProvider(UnitTestCase):
 
 		self.assertEqual(
 			provider.client.request.call_args_list[0].args,
-			("createVolume", {"name": f"{SERVER_NAME}-pool", "size": 100, "zoneid": "zone-id"}),
+			("createVolume", {"name": f"atlas-{SERVER_NAME}-pool", "size": 100, "zoneid": "zone-id"}),
 		)
 		self.assertEqual(
 			provider.client.request.call_args_list[1].args,

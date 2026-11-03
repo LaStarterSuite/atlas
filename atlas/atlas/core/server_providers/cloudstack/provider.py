@@ -235,6 +235,13 @@ class CloudStackProvider(ServerProvider):
 		templates = self.client.paginate("listTemplates", "template", {"templatefilter": "executable"})
 		return tuple(image for template in templates if (image := self.server_image(template)) is not None)
 
+	@staticmethod
+	def cloudstack_name(atlas_name: str) -> str:
+		"""Return the CloudStack name for an Atlas resource name.
+
+		CloudStack names cannot start with a digit, and Atlas names are UUIDs."""
+		return f"atlas-{atlas_name}"
+
 	@override
 	def ensure_server(self, request: ServerCreateRequest) -> ProviderServer:
 		"""Return the CloudStack server for the Atlas name, deploying it when absent."""
@@ -358,7 +365,9 @@ class CloudStackProvider(ServerProvider):
 
 	def find_server(self, name: str) -> Mapping | None:
 		"""Return the CloudStack server with the Atlas name."""
-		matches = self.client.paginate("listVirtualMachines", "virtualmachine", {"name": name})
+		matches = self.client.paginate(
+			"listVirtualMachines", "virtualmachine", {"name": self.cloudstack_name(name)}
+		)
 		if len(matches) > 1:
 			raise CloudStackError(f"CloudStack returned multiple servers for Atlas server {name}")
 		return matches[0] if matches else None
@@ -385,8 +394,8 @@ class CloudStackProvider(ServerProvider):
 				"serviceofferingid": offering_id,
 				"templateid": template_id,
 				"zoneid": self.zone_id(),
-				"name": request.name,
-				"displayname": request.name,
+				"name": self.cloudstack_name(request.name),
+				"displayname": self.cloudstack_name(request.name),
 				"keypair": self.ssh_key_pair_name,
 			},
 		)
@@ -409,7 +418,7 @@ class CloudStackProvider(ServerProvider):
 		if not isinstance(server_id, str):
 			raise CloudStackError(f"CloudStack server {request.name} has no ID")
 
-		name = f"{request.name}-pool"
+		name = f"{self.cloudstack_name(request.name)}-pool"
 		for volume in self.client.paginate("listVolumes", "volume", {"name": name}):
 			if volume.get("virtualmachineid") == server_id:
 				return
