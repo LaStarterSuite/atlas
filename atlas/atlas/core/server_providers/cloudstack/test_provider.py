@@ -241,6 +241,7 @@ class TestCloudStackProvider(UnitTestCase):
 	def test_ensure_server_deploys_and_waits_for_the_async_job(self) -> None:
 		provider = self.provider()
 		provider.zone_id = Mock(return_value="zone-id")
+		provider.network_id = Mock(return_value="net-1")
 		provider.find_server = Mock(return_value=None)
 		provider.client.paginate.return_value = []
 		provider.client.request.side_effect = [
@@ -272,6 +273,7 @@ class TestCloudStackProvider(UnitTestCase):
 					"serviceofferingid": "offering-1",
 					"templateid": "template-1",
 					"zoneid": "zone-id",
+					"networkids": "net-1",
 					"name": f"atlas-{SERVER_NAME}",
 					"displayname": f"atlas-{SERVER_NAME}",
 					"keypair": "atlas-par-1-ssh-key",

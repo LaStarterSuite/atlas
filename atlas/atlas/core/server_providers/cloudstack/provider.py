@@ -314,6 +314,20 @@ class CloudStackProvider(ServerProvider):
 			raise CloudStackError(f"CloudStack has no unique zone named {self.settings.cloudstack_zone!r}")
 		return ids[0]
 
+	def network_id(self) -> str:
+		"""Return the guest network of the zone that servers deploy into.
+
+		An advanced zone deploys no default network, so the guest network must exist."""
+		networks = self.client.paginate("listNetworks", "network", {"zoneid": self.zone_id()})
+		ids = [
+			network["id"]
+			for network in networks
+			if network.get("state") == "Implemented" and isinstance(network.get("id"), str)
+		]
+		if len(ids) != 1:
+			raise CloudStackError("CloudStack has no unique implemented guest network for the zone")
+		return ids[0]
+
 	def ensure_ssh_key_pair(self) -> None:
 		"""Register the Atlas public key as a CloudStack key pair when absent.
 
@@ -394,6 +408,7 @@ class CloudStackProvider(ServerProvider):
 				"serviceofferingid": offering_id,
 				"templateid": template_id,
 				"zoneid": self.zone_id(),
+				"networkids": self.network_id(),
 				"name": self.cloudstack_name(request.name),
 				"displayname": self.cloudstack_name(request.name),
 				"keypair": self.ssh_key_pair_name,
