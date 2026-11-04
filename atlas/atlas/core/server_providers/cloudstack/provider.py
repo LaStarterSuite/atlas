@@ -164,7 +164,7 @@ class CloudStackClient:
 		return ""
 
 
-DEFAULT_POOL_VOLUME_SIZE_GIB = 100
+DEFAULT_POOL_VOLUME_SIZE_GIB = 40
 
 
 @register
