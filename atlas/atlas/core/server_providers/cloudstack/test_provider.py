@@ -364,7 +364,7 @@ class TestCloudStackProvider(UnitTestCase):
 					"name": f"atlas-{SERVER_NAME}-pool",
 					"zoneid": "zone-id",
 					"diskofferingid": "disk-custom",
-					"size": 100,
+					"size": 40,
 				},
 			),
 		)
