@@ -295,16 +295,29 @@ class TestCloudStackProvider(UnitTestCase):
 			[],
 			[{"id": "disk-custom", "state": "Active", "iscustomized": True}],
 		]
-		provider.client.request.side_effect = [{"jobid": "job-1"}, {"jobid": "job-2"}]
+		provider.client.request.side_effect = [
+			{"id": "vm-1", "jobid": "job-1"},
+			{"jobid": "job-2"},
+			{"jobid": "job-3"},
+		]
 		provider.client.job_result.side_effect = [
+			None,
+			{
+				"virtualmachine": {
+					"id": "vm-1",
+					"state": "Running",
+					"nic": [{"ipaddress": "203.0.113.9"}],
+				}
+			},
 			{"volume": {"id": "vol-1", "name": f"atlas-{SERVER_NAME}-pool"}},
 			{"success": True},
 		]
 
-		provider.ensure_server(self.request())
+		with patch("atlas.atlas.core.server_providers.base.sleep"):
+			server = provider.ensure_server(self.request())
 
 		self.assertEqual(
-			provider.client.request.call_args_list[0].args,
+			provider.client.request.call_args_list[1].args,
 			(
 				"createVolume",
 				{
@@ -315,6 +328,7 @@ class TestCloudStackProvider(UnitTestCase):
 				},
 			),
 		)
+		self.assertEqual((server.provider_server_id, server.status), ("vm-1", "Installing"))
 
 	def test_ensure_server_reuses_the_server_with_the_atlas_name(self) -> None:
 		provider = self.provider()
