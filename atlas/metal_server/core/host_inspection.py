@@ -110,8 +110,8 @@ class HostReport:
 
 	@property
 	def free_devices(self) -> list[str]:
-		"""Return the disks that hold no data."""
-		return [disk.device for disk in self.disks if not disk.busy_reason]
+		"""Return the disks that hold no data. Zero-size placeholder devices are excluded."""
+		return [disk.device for disk in self.disks if not disk.busy_reason and disk.size_gib]
 
 	@property
 	def can_create_disk_image(self) -> bool:
