@@ -328,6 +328,25 @@ class CloudStackProvider(ServerProvider):
 			raise CloudStackError("CloudStack has no unique implemented guest network for the zone")
 		return ids[0]
 
+	def disk_offering_request(self, size_gib: int) -> Mapping[str, object]:
+		"""Return the createVolume disk parameters for one pool size.
+
+		An advanced zone requires a disk offering; a customized one carries the size,
+		a fixed one must already be large enough for the pool."""
+		offerings = self.client.paginate("listDiskOfferings", "diskoffering", {"zoneid": self.zone_id()})
+		active = [
+			offering
+			for offering in offerings
+			if offering.get("state") == "Active" and isinstance(offering.get("id"), str)
+		]
+		for offering in active:
+			if offering.get("iscustomized"):
+				return {"diskofferingid": offering["id"], "size": size_gib}
+		for offering in active:
+			if isinstance(offering.get("disksize"), int) and offering["disksize"] >= size_gib:
+				return {"diskofferingid": offering["id"]}
+		raise CloudStackError(f"CloudStack has no disk offering for a {size_gib} GiB pool volume")
+
 	def ensure_ssh_key_pair(self) -> None:
 		"""Register the Atlas public key as a CloudStack key pair when absent.
 
@@ -446,7 +465,8 @@ class CloudStackProvider(ServerProvider):
 		if not isinstance(size_gib, int) or size_gib <= 0:
 			size_gib = DEFAULT_POOL_VOLUME_SIZE_GIB
 		created = self.client.request(
-			"createVolume", {"name": name, "size": size_gib, "zoneid": self.zone_id()}
+			"createVolume",
+			{"name": name, "zoneid": self.zone_id(), **self.disk_offering_request(size_gib)},
 		)
 		job_id = created.get("jobid")
 		if not isinstance(job_id, str):

@@ -243,7 +243,10 @@ class TestCloudStackProvider(UnitTestCase):
 		provider.zone_id = Mock(return_value="zone-id")
 		provider.network_id = Mock(return_value="net-1")
 		provider.find_server = Mock(return_value=None)
-		provider.client.paginate.return_value = []
+		provider.client.paginate.side_effect = [
+			[],
+			[{"id": "disk-custom", "state": "Active", "iscustomized": True}],
+		]
 		provider.client.request.side_effect = [
 			{"id": "vm-1", "jobid": "job-1"},
 			{"jobid": "job-2"},
@@ -283,6 +286,36 @@ class TestCloudStackProvider(UnitTestCase):
 		self.assertEqual((server.provider_server_id, server.status), ("vm-1", "Installing"))
 		self.assertEqual(server.public_ipv4_address, "203.0.113.9")
 
+	def test_ensure_server_creates_the_pool_volume_with_a_disk_offering(self) -> None:
+		provider = self.provider()
+		provider.zone_id = Mock(return_value="zone-id")
+		provider.network_id = Mock(return_value="net-1")
+		provider.find_server = Mock(return_value=None)
+		provider.client.paginate.side_effect = [
+			[],
+			[{"id": "disk-custom", "state": "Active", "iscustomized": True}],
+		]
+		provider.client.request.side_effect = [{"jobid": "job-1"}, {"jobid": "job-2"}]
+		provider.client.job_result.side_effect = [
+			{"volume": {"id": "vol-1", "name": f"atlas-{SERVER_NAME}-pool"}},
+			{"success": True},
+		]
+
+		provider.ensure_server(self.request())
+
+		self.assertEqual(
+			provider.client.request.call_args_list[0].args,
+			(
+				"createVolume",
+				{
+					"name": f"atlas-{SERVER_NAME}-pool",
+					"zoneid": "zone-id",
+					"diskofferingid": "disk-custom",
+					"size": 100,
+				},
+			),
+		)
+
 	def test_ensure_server_reuses_the_server_with_the_atlas_name(self) -> None:
 		provider = self.provider()
 		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Stopped", "nic": []})
@@ -297,10 +330,13 @@ class TestCloudStackProvider(UnitTestCase):
 		provider = self.provider()
 		provider.zone_id = Mock(return_value="zone-id")
 		provider.find_server = Mock(return_value={"id": "vm-1", "state": "Running", "nic": []})
-		provider.client.paginate.return_value = []
+		provider.client.paginate.side_effect = [
+			[],
+			[{"id": "disk-custom", "state": "Active", "iscustomized": True}],
+		]
 		provider.client.request.side_effect = [{"jobid": "job-1"}, {"jobid": "job-2"}]
 		provider.client.job_result.side_effect = [
-			{"volume": {"id": "vol-1", "name": f"{SERVER_NAME}-pool"}},
+			{"volume": {"id": "vol-1", "name": f"atlas-{SERVER_NAME}-pool"}},
 			{"success": True},
 		]
 
@@ -308,7 +344,15 @@ class TestCloudStackProvider(UnitTestCase):
 
 		self.assertEqual(
 			provider.client.request.call_args_list[0].args,
-			("createVolume", {"name": f"atlas-{SERVER_NAME}-pool", "size": 100, "zoneid": "zone-id"}),
+			(
+				"createVolume",
+				{
+					"name": f"atlas-{SERVER_NAME}-pool",
+					"zoneid": "zone-id",
+					"diskofferingid": "disk-custom",
+					"size": 100,
+				},
+			),
 		)
 		self.assertEqual(
 			provider.client.request.call_args_list[1].args,
