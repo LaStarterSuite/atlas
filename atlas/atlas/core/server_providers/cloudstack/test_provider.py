@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -280,6 +281,7 @@ class TestCloudStackProvider(UnitTestCase):
 					"name": f"atlas-{SERVER_NAME}",
 					"displayname": f"atlas-{SERVER_NAME}",
 					"keypair": "atlas-par-1-ssh-key",
+					"userdata": base64.b64encode(provider.root_ssh_user_data().encode()).decode(),
 				},
 			),
 		)

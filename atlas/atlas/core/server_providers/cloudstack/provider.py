@@ -328,6 +328,18 @@ class CloudStackProvider(ServerProvider):
 			raise CloudStackError("CloudStack has no unique implemented guest network for the zone")
 		return ids[0]
 
+	def root_ssh_user_data(self) -> str:
+		"""Return the cloud-init user data that grants Atlas root SSH access.
+
+		Provider templates may not inject the deploy key pair into the root
+		account, and the host installation needs it."""
+		return "\n".join([
+			"#cloud-config",
+			"disable_root: false",
+			"ssh_authorized_keys:",
+			f"  - {self.settings.public_ssh_key}",
+		])
+
 	def disk_offering_request(self, size_gib: int) -> Mapping[str, object]:
 		"""Return the createVolume disk parameters for one pool size.
 
@@ -431,6 +443,7 @@ class CloudStackProvider(ServerProvider):
 				"name": self.cloudstack_name(request.name),
 				"displayname": self.cloudstack_name(request.name),
 				"keypair": self.ssh_key_pair_name,
+				"userdata": base64.b64encode(self.root_ssh_user_data().encode()).decode(),
 			},
 		)
 		job_id = deployment.get("jobid")
